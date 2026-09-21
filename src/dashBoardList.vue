@@ -1,8 +1,8 @@
 <script setup>
 import dayjs from 'dayjs'
 import { computed, ref } from 'vue'
-import firmwareHistory from './data/firmware-history.json'
 import firmwareHistoryTitle from './data/firmware-history-title.json'
+import firmwareHistory from './data/firmware-history.json'
 
 const pageSize = ref(10)
 const currentPage = ref(1)
@@ -22,15 +22,15 @@ const visibleRows = computed(() => {
 const firstRow = computed(() => (historyRows.length ? (currentPage.value - 1) * pageSize.value + 1 : 0))
 const lastRow = computed(() => Math.min(currentPage.value * pageSize.value, historyRows.length))
 
-function updatePageSize() {
-  currentPage.value = 1
-}
-
 function getColumnValue(row, column) {
   if (column.key === 'timestamp') {
     return row.timestamp ? dayjs(row.timestamp).format('YYYY/MM/DD hh:mm:ss') : 'null'
   }
   return row.modules.find((module) => module.Id === column.key)?.Version || 'null'
+}
+
+function isEmptyModuleRow(row) {
+  return row.modules.length === 0
 }
 
 function getBadgeClass(value) {
@@ -44,26 +44,24 @@ function getBadgeClass(value) {
   <div class="dashboard-list">
     <header class="list-header">
       <h1>Firmware Modules <span>Audit Log</span></h1>
-      <label class="page-size">
-        每頁顯示
-        <select v-model.number="pageSize" @change="updatePageSize">
-          <option :value="10">10 筆</option>
-          <option :value="20">20 筆</option>
-          <option :value="50">50 筆</option>
-        </select>
-      </label>
     </header>
 
     <div class="table-wrap">
       <table>
         <thead>
           <tr>
-            <th v-for="column in titleColumns" :key="column.key">{{ column.label }}</th>
+            <th v-for="column in titleColumns" :key="column.key"
+              :class="{ 'timestamp-column': column.key === 'timestamp' }">
+              {{ column.label }}
+            </th>
           </tr>
         </thead>
         <tbody>
           <tr v-for="row in visibleRows" :key="row.id">
-            <td v-for="column in titleColumns" :key="`${row.id}-${column.key}`">
+            <td v-for="column in titleColumns" :key="`${row.id}-${column.key}`" :class="[
+              { 'empty-cell': isEmptyModuleRow(row) },
+              { 'timestamp-column': column.key === 'timestamp' },
+            ]">
               {{ getColumnValue(row, column) }}
             </td>
           </tr>
@@ -106,33 +104,152 @@ function getBadgeClass(value) {
   margin-bottom: 18px;
 }
 
-h1 { margin: 0; color: #2c3e50; font-size: clamp(1.15rem, 2vw, 1.55rem); }
-h1 span { color: #94a3b8; font-size: 0.7em; font-weight: 500; }
-.page-size { display: flex; align-items: center; gap: 8px; color: #64748b; font-size: 0.9rem; }
-select, button { border: 1px solid #cbd5e1; border-radius: 6px; background: #fff; color: #334155; padding: 8px 10px; }
-button { cursor: pointer; font-weight: 600; }
-button:hover:not(:disabled) { background: #f8fafc; border-color: #94a3b8; }
-button:disabled { color: #94a3b8; cursor: not-allowed; }
+h1 {
+  margin: 0;
+  color: #2c3e50;
+  font-size: clamp(1.15rem, 2vw, 1.55rem);
+}
 
-.table-wrap { width: 100%; overflow-x: auto; border: 1px solid #e2e8f0; border-radius: 8px; }
-table { width: 100%; min-width: 1450px; border-collapse: collapse; text-align: left; font-size: 0.9rem; }
-th { padding: 12px; background: #f8fafc; color: #64748b; border-bottom: 2px solid #e2e8f0; white-space: nowrap; }
-td { padding: 12px; color: #334155; border-bottom: 1px solid #e2e8f0; white-space: nowrap; }
-tbody tr:hover { background: #f8fafc; }
-.timestamp { color: #475569; font-weight: 600; }
-code { font-family: "SFMono-Regular", Consolas, monospace; }
-small { display: inline-block; max-width: 420px; overflow: hidden; text-overflow: ellipsis; vertical-align: bottom; }
-.status-badge { display: inline-block; padding: 3px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: 700; }
-.status-ok { background: #d1fae5; color: #065f46; }
-.status-error { background: #fee2e2; color: #991b1b; }
-.status-warn { background: #ffedd5; color: #9a3412; }
+h1 span {
+  color: #94a3b8;
+  font-size: 0.7em;
+  font-weight: 500;
+}
 
-.pagination-bar { justify-content: space-between; gap: 16px; margin-top: 16px; color: #64748b; font-size: 0.9rem; }
-.pagination-controls { gap: 10px; }
+button {
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: #fff;
+  color: #334155;
+  padding: 8px 10px;
+}
+
+button {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+button:hover:not(:disabled) {
+  background: #f8fafc;
+  border-color: #94a3b8;
+}
+
+button:disabled {
+  color: #94a3b8;
+  cursor: not-allowed;
+}
+
+.table-wrap {
+  width: 100%;
+  overflow-x: auto;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+}
+
+table {
+  width: 100%;
+  min-width: 1450px;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 0.9rem;
+}
+
+th {
+  padding: 12px;
+  background: #f8fafc;
+  color: #64748b;
+  border-bottom: 2px solid #e2e8f0;
+  white-space: nowrap;
+}
+
+.timestamp-column {
+  width: 180px;
+  min-width: 180px;
+}
+
+td {
+  padding: 12px;
+  color: #334155;
+  border-bottom: 1px solid #e2e8f0;
+  white-space: nowrap;
+}
+
+.empty-cell {
+  background: #fff1f2;
+  color: #be123c;
+}
+
+tbody tr:hover {
+  background: #f8fafc;
+}
+
+.timestamp {
+  color: #475569;
+  font-weight: 600;
+}
+
+code {
+  font-family: "SFMono-Regular", Consolas, monospace;
+}
+
+small {
+  display: inline-block;
+  max-width: 420px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: bottom;
+}
+
+.status-badge {
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.status-ok {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.status-error {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.status-warn {
+  background: #ffedd5;
+  color: #9a3412;
+}
+
+.pagination-bar {
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 16px;
+  color: #64748b;
+  font-size: 0.9rem;
+}
+
+.pagination-controls {
+  gap: 10px;
+}
 
 @media (max-width: 640px) {
-  .dashboard-list { padding: 18px 12px; border-radius: 8px; }
-  .list-header, .pagination-bar { align-items: flex-start; flex-direction: column; }
-  .pagination-controls { width: 100%; justify-content: space-between; }
+  .dashboard-list {
+    padding: 18px 12px;
+    border-radius: 8px;
+  }
+
+  .list-header,
+  .pagination-bar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .pagination-controls {
+    width: 100%;
+    justify-content: space-between;
+  }
 }
 </style>
