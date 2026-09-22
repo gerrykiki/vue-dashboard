@@ -1,0 +1,89 @@
+{
+    "title": [
+        {
+            "key": "timestamp"
+        },
+        {
+            "key": "FW_BMC_0"
+        },
+        {
+            "key": "FW_CPLD_0",
+            "bundleKey": "CPLD"
+        },
+        {
+            "key": "FW_ProcessorModule_SMA_0",
+            "bundleKey": "HPMSMA"
+        },
+        {
+            "key": "FW_StorageBackplane_SMA_0",
+            "bundleKey": "E1SMCU"
+        },
+        {
+            "key": "FW_ERoT_BMC_0"
+        },
+        {
+            "key": "FW_GPU_SMA_0",
+            "bundleKey": "GPUSMA"
+        },
+        {
+            "key": "FW_GPU_SMA_1",
+            "bundleKey": "GPUSMA"
+        },
+        {
+            "key": "FW_GPU_0",
+            "bundleKey": "GPUVBIOS"
+        },
+        {
+            "key": "FW_GPU_1",
+            "bundleKey": "GPUVBIOS"
+        },
+        {
+            "key": "InfoROM_GPU_0"
+        },
+        {
+            "key": "InfoROM_GPU_1"
+        },
+        {
+            "key": "CX_0",
+            "bundleKey": "CX8"
+        },
+        {
+            "key": "CX_1",
+            "bundleKey": "CX8"
+        },
+        {
+            "key": "NVMe_68"
+        },
+        {
+            "key": "SBIOS_FMC_0",
+            "bundleKey": "SBIOS"
+        },
+        {
+            "key": "SBIOS_FMC_1",
+            "bundleKey": "SBIOS"
+        },
+        {
+            "key": "SBIOS_FW_0",
+            "bundleKey": "SBIOS"
+        },
+        {
+            "key": "SBIOS_FW_1",
+            "bundleKey": "SBIOS"
+        },
+        {
+            "key": "PLDM_Device_Firmware_Device_105_Component_12289_954"
+        },
+        {
+            "key": "PLDM_Device_Firmware_Device_105_Component_12336_1612"
+        },
+        {
+            "key": "PLDM_Device_Firmware_Device_105_Component_1_7366"
+        },
+        {
+            "key": "bios_active"
+        },
+        {
+            "key": "bmc_active"
+        }
+    ]
+}

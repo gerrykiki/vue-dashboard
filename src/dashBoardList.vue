@@ -1,26 +1,51 @@
 <script setup>
 import dayjs from 'dayjs'
-import { computed, ref } from 'vue'
-import firmwareHistoryTitle from './data/firmware-history-title.json'
-import firmwareHistory from './data/firmware-history.json'
+import { computed, onMounted, ref } from 'vue'
+import { fetchFirmwareHistory } from './api/firmwareHistory'
+import { fetchMachines } from './api/machines'
+import { fetchMetadata } from './api/metadata'
+import machineInfos from './data/machineInfos.json'
 
 const pageSize = ref(10)
 const currentPage = ref(1)
+const currentBundle = ref('none')
 
-const titleColumns = firmwareHistoryTitle.title
-const historyRows = firmwareHistory.map((record) => ({
-  ...record,
-  id: record.timestamp,
-  modules: Array.isArray(record.modules) ? record.modules : [],
-}))
+const machines = ref([])
+const currentMachine = ref(null)
+const firmwareHistory = ref([])
+const metadataMap = ref([])
 
-const totalPages = computed(() => Math.max(1, Math.ceil(historyRows.length / pageSize.value)))
+const titleColumns = machineInfos.title
+const historyRows = computed(() =>
+  firmwareHistory.value.map((record) => ({
+    ...record,
+    id: record.timestamp,
+    modules: Array.isArray(record.modules) ? record.modules : [],
+  }))
+)
+
+async function selectMachine(machine) {
+  currentMachine.value = machine
+  currentPage.value = 1
+  firmwareHistory.value = await fetchFirmwareHistory(machine)
+}
+
+onMounted(async () => {
+  metadataMap.value = await fetchMetadata()
+  machines.value = await fetchMachines()
+  if (machines.value.length) {
+    await selectMachine(machines.value[0])
+  }
+})
+
+const totalPages = computed(() => Math.max(1, Math.ceil(historyRows.value.length / pageSize.value)))
 const visibleRows = computed(() => {
   const start = (currentPage.value - 1) * pageSize.value
-  return historyRows.slice(start, start + pageSize.value)
+  return historyRows.value.slice(start, start + pageSize.value)
 })
-const firstRow = computed(() => (historyRows.length ? (currentPage.value - 1) * pageSize.value + 1 : 0))
-const lastRow = computed(() => Math.min(currentPage.value * pageSize.value, historyRows.length))
+const firstRow = computed(() => (historyRows.value.length ? (currentPage.value - 1) * pageSize.value + 1 : 0))
+const lastRow = computed(() => Math.min(currentPage.value * pageSize.value, historyRows.value.length))
+const selectedBundle = computed(() => metadataMap.value.find((bundle) => bundle.Name === currentBundle.value))
 
 function getColumnValue(row, column) {
   if (column.key === 'timestamp') {
@@ -33,17 +58,34 @@ function isEmptyModuleRow(row) {
   return row.modules.length === 0
 }
 
-function getBadgeClass(value) {
-  if (value === 'OK' || value === 'ON' || value === 'UPDATED') return 'status-badge status-ok'
-  if (value === 'ERROR' || value === 'OFF' || value === 'FAILED') return 'status-badge status-error'
-  return 'status-badge status-warn'
+function isVersionMismatch(row, column) {
+  if (!column.bundleKey || !selectedBundle.value) return false
+  const moduleVersion = row.modules.find((module) => module.Id === column.key)?.Version ?? null
+  const bundleVersion = selectedBundle.value[column.bundleKey] ?? null
+  if (moduleVersion === null && bundleVersion === null) return false
+  return moduleVersion !== bundleVersion
 }
+
 </script>
 
 <template>
   <div class="dashboard-list">
+    <nav class="machine-bar">
+      <button v-for="machine in machines" :key="machine.ip"
+        :class="{ 'active': currentMachine && currentMachine.ip === machine.ip }" @click="selectMachine(machine)">
+        {{ machine.name }}
+      </button>
+    </nav>
+
     <header class="list-header">
-      <h1>Firmware Modules <span>Audit Log</span></h1>
+      <h1>Firmware Modules</h1>
+      <div>
+        <button @click="currentBundle = 'none'">X</button>
+        <button v-for="bundle in metadataMap" :key="bundle.Name" :class="{ 'active': currentBundle === bundle.Name }"
+          @click="currentBundle = bundle.Name">
+          {{ bundle.Name }}
+        </button>
+      </div>
     </header>
 
     <div class="table-wrap">
@@ -52,7 +94,7 @@ function getBadgeClass(value) {
           <tr>
             <th v-for="column in titleColumns" :key="column.key"
               :class="{ 'timestamp-column': column.key === 'timestamp' }">
-              {{ column.label }}
+              {{ column.key }}
             </th>
           </tr>
         </thead>
@@ -61,6 +103,7 @@ function getBadgeClass(value) {
             <td v-for="column in titleColumns" :key="`${row.id}-${column.key}`" :class="[
               { 'empty-cell': isEmptyModuleRow(row) },
               { 'timestamp-column': column.key === 'timestamp' },
+              { 'version-diff': isVersionMismatch(row, column) },
             ]">
               {{ getColumnValue(row, column) }}
             </td>
@@ -91,11 +134,21 @@ function getBadgeClass(value) {
   box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
 }
 
+.machine-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
 .list-header,
 .pagination-bar,
 .pagination-controls {
   display: flex;
   align-items: center;
+  justify-content: space-between;
 }
 
 .list-header {
@@ -129,15 +182,21 @@ button {
   font-weight: 600;
 }
 
-button:hover:not(:disabled) {
+button.active {
+  background: #52a0ee;
+}
+
+/* button:hover:not(:disabled) {
   background: #f8fafc;
   border-color: #94a3b8;
-}
+} */
 
 button:disabled {
   color: #94a3b8;
   cursor: not-allowed;
 }
+
+
 
 .table-wrap {
   width: 100%;
@@ -177,6 +236,11 @@ td {
 .empty-cell {
   background: #fff1f2;
   color: #be123c;
+}
+
+.version-diff {
+  color: #1e3a8a;
+  font-weight: 700;
 }
 
 tbody tr:hover {
