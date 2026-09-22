@@ -53,7 +53,8 @@ class ApiManager {
   buildUrl(path, extraParams = {}) {
     const base = this.config.host ? `http://${this.config.host}` : ''
     const query = this.buildQuery(extraParams)
-    return query ? `${base}${path}?${query}` : `${base}${path}`
+    const url = `${base}/api${path}`
+    return query ? `${url}?${query}` : url
   }
 
   async request(path, { params = {}, ...options } = {}) {

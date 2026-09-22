@@ -1,7 +1,7 @@
 import { fileURLToPath, URL } from 'node:url'
 
-import { defineConfig, loadEnv } from 'vite'
 import vue from '@vitejs/plugin-vue'
+import { defineConfig, loadEnv } from 'vite'
 import vueDevTools from 'vite-plugin-vue-devtools'
 
 // https://vite.dev/config/
@@ -10,6 +10,7 @@ export default defineConfig(({ mode }) => {
   const apiHost = env.VITE_API_HOST || 'localhost:3000'
 
   return {
+    base: './',
     plugins: [
       vue(),
       vueDevTools(),
@@ -20,11 +21,8 @@ export default defineConfig(({ mode }) => {
       },
     },
     server: {
-      // dev server 端代理，避免瀏覽器直接跨 origin 打後端被 CORS 擋下來
       proxy: {
-        '/machines': `http://${apiHost}`,
-        '/history': `http://${apiHost}`,
-        '/metadata': `http://${apiHost}`,
+        '/api': `http://${apiHost}`,
       },
     },
   }

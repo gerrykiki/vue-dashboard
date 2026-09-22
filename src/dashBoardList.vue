@@ -1,6 +1,9 @@
 <script setup>
 import dayjs from 'dayjs'
+import utc from 'dayjs/plugin/utc'
 import { computed, onMounted, ref } from 'vue'
+
+dayjs.extend(utc)
 import { fetchFirmwareHistory } from './api/firmwareHistory'
 import { fetchMachines } from './api/machines'
 import { fetchMetadata } from './api/metadata'
@@ -15,6 +18,10 @@ const currentMachine = ref(null)
 const firmwareHistory = ref([])
 const metadataMap = ref([])
 
+const isLoadingMachines = ref(true)
+const isLoadingHistory = ref(false)
+const errorMessage = ref('')
+
 const titleColumns = machineInfos.title
 const historyRows = computed(() =>
   firmwareHistory.value.map((record) => ({
@@ -27,14 +34,29 @@ const historyRows = computed(() =>
 async function selectMachine(machine) {
   currentMachine.value = machine
   currentPage.value = 1
-  firmwareHistory.value = await fetchFirmwareHistory(machine)
+  isLoadingHistory.value = true
+  errorMessage.value = ''
+  try {
+    firmwareHistory.value = await fetchFirmwareHistory(machine)
+  } catch (error) {
+    errorMessage.value = `無法載入 ${machine.name} 的 firmware 紀錄：${error.message}`
+    firmwareHistory.value = []
+  } finally {
+    isLoadingHistory.value = false
+  }
 }
 
 onMounted(async () => {
-  metadataMap.value = await fetchMetadata()
-  machines.value = await fetchMachines()
-  if (machines.value.length) {
-    await selectMachine(machines.value[0])
+  try {
+    metadataMap.value = await fetchMetadata()
+    machines.value = await fetchMachines()
+    if (machines.value.length) {
+      await selectMachine(machines.value[0])
+    }
+  } catch (error) {
+    errorMessage.value = `無法載入機台清單：${error.message}`
+  } finally {
+    isLoadingMachines.value = false
   }
 })
 
@@ -47,20 +69,33 @@ const firstRow = computed(() => (historyRows.value.length ? (currentPage.value -
 const lastRow = computed(() => Math.min(currentPage.value * pageSize.value, historyRows.value.length))
 const selectedBundle = computed(() => metadataMap.value.find((bundle) => bundle.Name === currentBundle.value))
 
-function getColumnValue(row, column) {
-  if (column.key === 'timestamp') {
-    return row.timestamp ? dayjs(row.timestamp).format('YYYY/MM/DD hh:mm:ss') : 'null'
-  }
-  return row.modules.find((module) => module.Id === column.key)?.Version || 'null'
+function moduleIdKey(id) {
+  return id?.split('/').pop() ?? id
 }
 
-function isEmptyModuleRow(row) {
-  return row.modules.length === 0
+function findModule(row, column) {
+  return row.modules.find((module) => moduleIdKey(module.Id) === column.key)
+}
+
+function getColumnValue(row, column) {
+  if (column.key === 'timestamp') {
+    return row.timestamp ? dayjs.utc(row.timestamp).local().format('YYYY/MM/DD HH:mm:ss') : 'null'
+  }
+  return findModule(row, column)?.Version || 'null'
+}
+
+function isEmptyValue(row, column) {
+  if (column.key === 'timestamp') return !row.timestamp
+  return !findModule(row, column)?.Version
+}
+
+function getColumnLabel(column) {
+  return column.label || column.key
 }
 
 function isVersionMismatch(row, column) {
   if (!column.bundleKey || !selectedBundle.value) return false
-  const moduleVersion = row.modules.find((module) => module.Id === column.key)?.Version ?? null
+  const moduleVersion = findModule(row, column)?.Version ?? null
   const bundleVersion = selectedBundle.value[column.bundleKey] ?? null
   if (moduleVersion === null && bundleVersion === null) return false
   return moduleVersion !== bundleVersion
@@ -70,56 +105,79 @@ function isVersionMismatch(row, column) {
 
 <template>
   <div class="dashboard-list">
-    <nav class="machine-bar">
+    <nav class="machine-bar" aria-label="機台選擇">
       <button v-for="machine in machines" :key="machine.ip"
-        :class="{ 'active': currentMachine && currentMachine.ip === machine.ip }" @click="selectMachine(machine)">
+        :class="{ 'active': currentMachine && currentMachine.ip === machine.ip }"
+        :aria-pressed="currentMachine && currentMachine.ip === machine.ip" @click="selectMachine(machine)">
         {{ machine.name }}
       </button>
     </nav>
 
+    <p v-if="errorMessage" class="error-banner" role="alert">{{ errorMessage }}</p>
+
     <header class="list-header">
       <h1>Firmware Modules</h1>
-      <div>
-        <button @click="currentBundle = 'none'">X</button>
+      <div class="bundle-filter" aria-label="Bundle 篩選">
+        <button :class="{ 'active': currentBundle === 'none' }" :aria-pressed="currentBundle === 'none'"
+          @click="currentBundle = 'none'">
+          全部
+        </button>
         <button v-for="bundle in metadataMap" :key="bundle.Name" :class="{ 'active': currentBundle === bundle.Name }"
-          @click="currentBundle = bundle.Name">
+          :aria-pressed="currentBundle === bundle.Name" @click="currentBundle = bundle.Name">
           {{ bundle.Name }}
         </button>
       </div>
     </header>
 
-    <div class="table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th v-for="column in titleColumns" :key="column.key"
-              :class="{ 'timestamp-column': column.key === 'timestamp' }">
-              {{ column.key }}
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="row in visibleRows" :key="row.id">
-            <td v-for="column in titleColumns" :key="`${row.id}-${column.key}`" :class="[
-              { 'empty-cell': isEmptyModuleRow(row) },
-              { 'timestamp-column': column.key === 'timestamp' },
-              { 'version-diff': isVersionMismatch(row, column) },
-            ]">
-              {{ getColumnValue(row, column) }}
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
+    <ul class="legend">
+      <li><span class="legend-swatch empty-cell"></span>無回報資料</li>
+      <li><span class="legend-swatch version-diff"></span>版本與所選 bundle 不符</li>
+    </ul>
 
-    <footer class="pagination-bar">
-      <span>顯示第 {{ firstRow }} - {{ lastRow }} 筆，共 {{ historyRows.length }} 筆</span>
-      <div class="pagination-controls">
-        <button :disabled="currentPage === 1" @click="currentPage--">上一頁</button>
-        <span>第 {{ currentPage }} / {{ totalPages }} 頁</span>
-        <button :disabled="currentPage === totalPages" @click="currentPage++">下一頁</button>
+    <p v-if="isLoadingMachines" class="state-message">載入機台中…</p>
+    <template v-else-if="!machines.length">
+      <p class="state-message">查無機台資料</p>
+    </template>
+    <template v-else>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th v-for="column in titleColumns" :key="column.key" :title="column.key"
+                :class="{ 'timestamp-column': column.key === 'timestamp' }">
+                {{ getColumnLabel(column) }}
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-if="isLoadingHistory">
+              <td :colspan="titleColumns.length" class="state-message">載入 firmware 紀錄中…</td>
+            </tr>
+            <tr v-else-if="!visibleRows.length">
+              <td :colspan="titleColumns.length" class="state-message">查無 firmware 紀錄</td>
+            </tr>
+            <tr v-for="row in visibleRows" v-else :key="row.id">
+              <td v-for="column in titleColumns" :key="`${row.id}-${column.key}`" :class="[
+                { 'empty-cell': isEmptyValue(row, column) },
+                { 'timestamp-column': column.key === 'timestamp' },
+                { 'version-diff': isVersionMismatch(row, column) },
+              ]">
+                {{ getColumnValue(row, column) }}
+              </td>
+            </tr>
+          </tbody>
+        </table>
       </div>
-    </footer>
+
+      <footer class="pagination-bar">
+        <span>顯示第 {{ firstRow }} - {{ lastRow }} 筆，共 {{ historyRows.length }} 筆</span>
+        <div class="pagination-controls">
+          <button :disabled="currentPage === 1" @click="currentPage--">上一頁</button>
+          <span>第 {{ currentPage }} / {{ totalPages }} 頁</span>
+          <button :disabled="currentPage === totalPages" @click="currentPage++">下一頁</button>
+        </div>
+      </footer>
+    </template>
   </div>
 </template>
 
@@ -163,10 +221,10 @@ h1 {
   font-size: clamp(1.15rem, 2vw, 1.55rem);
 }
 
-h1 span {
-  color: #94a3b8;
-  font-size: 0.7em;
-  font-weight: 500;
+.bundle-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 button {
@@ -175,28 +233,78 @@ button {
   background: #fff;
   color: #334155;
   padding: 8px 10px;
-}
-
-button {
   cursor: pointer;
   font-weight: 600;
 }
 
 button.active {
-  background: #52a0ee;
+  background: #2563eb;
+  border-color: #2563eb;
+  color: #fff;
 }
 
-/* button:hover:not(:disabled) {
+button:hover:not(:disabled) {
   background: #f8fafc;
   border-color: #94a3b8;
-} */
+}
+
+button.active:hover:not(:disabled) {
+  background: #1d4ed8;
+  border-color: #1d4ed8;
+}
 
 button:disabled {
   color: #94a3b8;
   cursor: not-allowed;
 }
 
+.error-banner {
+  margin: 0 0 16px;
+  padding: 10px 14px;
+  background: #fee2e2;
+  color: #991b1b;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  font-size: 0.9rem;
+}
 
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin: 0 0 14px;
+  padding: 0;
+  list-style: none;
+  color: #64748b;
+  font-size: 0.85rem;
+}
+
+.legend li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.legend-swatch {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+}
+
+.legend-swatch.version-diff {
+  background: #1e3a8a;
+}
+
+.legend-swatch.empty-cell {
+  background: #be123c;
+}
+
+.state-message {
+  padding: 24px 12px;
+  text-align: center;
+  color: #64748b;
+}
 
 .table-wrap {
   width: 100%;
@@ -222,8 +330,21 @@ th {
 }
 
 .timestamp-column {
+  position: sticky;
+  left: 0;
+  z-index: 1;
   width: 180px;
   min-width: 180px;
+  background: #f8fafc;
+  box-shadow: 1px 0 0 #e2e8f0;
+}
+
+td.timestamp-column {
+  background: #fff;
+}
+
+tbody tr:hover td.timestamp-column {
+  background: #f8fafc;
 }
 
 td {
@@ -234,7 +355,6 @@ td {
 }
 
 .empty-cell {
-  background: #fff1f2;
   color: #be123c;
 }
 
@@ -245,46 +365,6 @@ td {
 
 tbody tr:hover {
   background: #f8fafc;
-}
-
-.timestamp {
-  color: #475569;
-  font-weight: 600;
-}
-
-code {
-  font-family: "SFMono-Regular", Consolas, monospace;
-}
-
-small {
-  display: inline-block;
-  max-width: 420px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  vertical-align: bottom;
-}
-
-.status-badge {
-  display: inline-block;
-  padding: 3px 8px;
-  border-radius: 4px;
-  font-size: 0.75rem;
-  font-weight: 700;
-}
-
-.status-ok {
-  background: #d1fae5;
-  color: #065f46;
-}
-
-.status-error {
-  background: #fee2e2;
-  color: #991b1b;
-}
-
-.status-warn {
-  background: #ffedd5;
-  color: #9a3412;
 }
 
 .pagination-bar {
