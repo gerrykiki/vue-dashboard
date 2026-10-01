@@ -2,12 +2,13 @@
 // 之後要擴充其他設定（例如 protocol、timeout、auth token...）
 // 只需要在 defaultConfig / buildQuery 這裡加，不用改每一支 api 檔案。
 
-// 後端 host 由啟動時的 --mode 決定（見 .env.development / .env.production）。
-// dev（`vite`/`vite --mode production` 開發伺服器）一律走相對路徑，
-// 交給 vite.config.js 的 server.proxy 代理過去，避免瀏覽器端 CORS 問題；
-// build 出來的正式版沒有 dev server 可以代理，才需要組完整的 host。
+// 前端 dist 由後端一起提供，頁面與 API 同來源，預設不指定 host：
+// - dev：走 /api，交給 vite.config.js 的 server.proxy 代理到後端
+// - 正式版：走同網域的 /api（例如 http://nv-bundle.thbsms.com/api），
+//   不寫死內網 IP，從網域或直接用 IP 開啟都能用
+// 需要指定其他後端時可用 setHost('ip:port')。
 const defaultConfig = {
-  host: import.meta.env.DEV ? '' : (import.meta.env.VITE_API_HOST || '10.33.33.179'),
+  host: '',
 }
 
 class ApiManager {
