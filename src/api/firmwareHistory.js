@@ -1,7 +1,8 @@
 import { apiManager } from './apiManager'
 
 export async function fetchFirmwareHistory(machine) {
-  apiManager.setIp(machine.ip)
-  const data = await apiManager.request('/history')
+  const data = await apiManager.request('/history', {
+    params: { machine_type: machine.machine_type },
+  })
   return data[machine.name] ?? []
 }

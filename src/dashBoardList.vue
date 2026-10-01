@@ -106,9 +106,9 @@ function isVersionMismatch(row, column) {
 <template>
   <div class="dashboard-list">
     <nav class="machine-bar" aria-label="機台選擇">
-      <button v-for="machine in machines" :key="machine.ip"
-        :class="{ 'active': currentMachine && currentMachine.ip === machine.ip }"
-        :aria-pressed="currentMachine && currentMachine.ip === machine.ip" @click="selectMachine(machine)">
+      <button v-for="machine in machines" :key="machine.machine_type"
+        :class="{ 'active': currentMachine && currentMachine.machine_type === machine.machine_type }"
+        :aria-pressed="currentMachine && currentMachine.machine_type === machine.machine_type" @click="selectMachine(machine)">
         {{ machine.name }}
       </button>
     </nav>

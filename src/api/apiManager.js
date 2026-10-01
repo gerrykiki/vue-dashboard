@@ -1,4 +1,4 @@
-// 集中管理 API 相關設定（目前是後端 host + 機台 ip），
+// 集中管理 API 相關設定（目前是後端 host），
 // 之後要擴充其他設定（例如 protocol、timeout、auth token...）
 // 只需要在 defaultConfig / buildQuery 這裡加，不用改每一支 api 檔案。
 
@@ -8,7 +8,6 @@
 // build 出來的正式版沒有 dev server 可以代理，才需要組完整的 host。
 const defaultConfig = {
   host: import.meta.env.DEV ? '' : (import.meta.env.VITE_API_HOST || '10.33.33.179'),
-  ip: '',
 }
 
 class ApiManager {
@@ -32,18 +31,9 @@ class ApiManager {
     return this.config.host
   }
 
-  setIp(ip) {
-    this.config.ip = ip
-  }
-
-  getIp() {
-    return this.config.ip
-  }
-
   // 依目前設定組出 query string，新增設定時記得同步加進來
   buildQuery(extraParams = {}) {
     const params = new URLSearchParams()
-    if (this.config.ip) params.set('ip', this.config.ip)
     Object.entries(extraParams).forEach(([key, value]) => {
       if (value !== undefined && value !== null) params.set(key, value)
     })
