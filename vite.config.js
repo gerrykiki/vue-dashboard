@@ -10,7 +10,7 @@ export default defineConfig(({ mode }) => {
   const apiHost = env.VITE_API_HOST || 'localhost:3000'
 
   return {
-    base: './',
+    base: '/',
     plugins: [
       vue(),
       vueDevTools(),

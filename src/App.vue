@@ -1,10 +1,10 @@
 <script setup>
-import DashboardList from './dashBoardList.vue'
+import { RouterView } from 'vue-router'
 </script>
 
 <template>
   <main class="app-shell">
-    <DashboardList />
+    <RouterView />
   </main>
 </template>
 
