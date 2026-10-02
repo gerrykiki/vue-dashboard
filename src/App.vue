@@ -1,5 +1,5 @@
 <script setup>
-import { RouterView } from 'vue-router'
+import { RouterView } from 'vue-router';
 </script>
 
 <template>
@@ -32,7 +32,7 @@ select {
 }
 
 .app-shell {
-  min-height: 100vh;
-  padding: clamp(24px, 5vw, 64px) clamp(16px, 4vw, 40px);
+  /* min-height: 100vh;  */
+  padding: 12px;
 }
 </style>

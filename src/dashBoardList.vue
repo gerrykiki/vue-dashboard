@@ -357,7 +357,7 @@ function isVersionMismatch(row, column) {
 .dashboard-list {
   width: min(1680px, 100%);
   margin: 0 auto;
-  padding: clamp(20px, 3vw, 32px);
+  padding: 12px;
   background: #fff;
   border: 1px solid #e2e8f0;
   border-radius: 12px;
