@@ -1,0 +1,41 @@
+stages:
+  - build
+  - deploy
+
+variables:
+  DEPLOY_HOST: 10.33.33.179
+  DEPLOY_USER: gerry
+  SSHPASS: gerry
+  SSH_OPTS: -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null
+  # 相對於 DEPLOY_USER 的 home 目錄
+  DEPLOY_PATH: workspace/dashboard-vr
+
+build:
+  stage: build
+  image: node:24-alpine
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+  cache:
+    key:
+      files: [package-lock.json]
+    paths: [.npm/]
+  script:
+    - npm ci --cache .npm --prefer-offline
+    - npm run build
+  artifacts:
+    paths: [dist/]
+    expire_in: 1 week
+
+deploy:
+  stage: deploy
+  image: alpine:3.22
+  needs: [build]
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+  environment:
+    name: production
+  before_script:
+    - apk add --no-cache openssh-client rsync sshpass
+  script:
+    - sshpass -e rsync -az --delete -e "ssh $SSH_OPTS" dist/ "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/dist/"
+    - sshpass -e ssh $SSH_OPTS "$DEPLOY_USER@$DEPLOY_HOST" "cd $DEPLOY_PATH && docker compose up -d --build"
