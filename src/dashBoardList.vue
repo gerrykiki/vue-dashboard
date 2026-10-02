@@ -249,7 +249,7 @@ function isVersionMismatch(row, column) {
     <section class="dashboard-main">
       <header class="list-header">
         <div class="title-block">
-          <h1>Bundle</h1>
+          <h1>NVIDIA Compute Tray Firmware Bundle</h1>
           <p v-if="currentMachine" class="machine-path">
             <template v-if="currentMachine.name">{{ currentMachine.name }}</template>
             <template v-else>
@@ -332,7 +332,7 @@ function isVersionMismatch(row, column) {
                   { 'timestamp-column': column.key === 'timestamp' },
                 ]">
                   <span v-if="isVersionMismatch(row, column)" class="diff-badge">{{ getColumnValue(row, column)
-                    }}</span>
+                  }}</span>
                   <template v-else>{{ getColumnValue(row, column) }}</template>
                 </td>
               </tr>
