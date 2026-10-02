@@ -1,8 +1,7 @@
 import { apiManager } from './apiManager'
 
-export async function fetchFirmwareHistory(machine) {
-  const data = await apiManager.request('/history', {
-    params: { machine_type: machine.machine_type },
-  })
-  return data[machine.name] ?? []
+// 只需要 machine_type，總表（folders API，沒有 name）與單機頁都能共用
+export async function fetchFirmwareHistory(machineType) {
+  const data = await apiManager.request(`/history/${encodeURIComponent(machineType)}`)
+  return Array.isArray(data) ? data : []
 }

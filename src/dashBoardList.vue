@@ -6,7 +6,7 @@ import { RouterLink } from 'vue-router'
 
 dayjs.extend(utc)
 import { fetchFirmwareHistory } from './api/firmwareHistory'
-import { fetchMachines } from './api/machines'
+import { fetchActiveMachineFolders, fetchMachines } from './api/machines'
 import { fetchMetadata } from './api/metadata'
 import machineInfos from './data/machineInfos.json'
 
@@ -37,23 +37,85 @@ const historyRows = computed(() =>
   }))
 )
 
+// 總表：folders API 的 ACTIVE 機器，依 product > stage > 機器 組成左側樹狀選單
+// 單機頁：仍用 /api/machines 找網址上的 machineType（含手動設定、不在 folders 裡的機台，例如 BESPIN）
+const machineTree = computed(() => {
+  const products = new Map()
+  for (const machine of machines.value) {
+    if (!products.has(machine.product)) {
+      products.set(machine.product, { key: machine.product, label: formatProduct(machine.product), stages: new Map(), count: 0 })
+    }
+    const product = products.get(machine.product)
+    const stageKey = machine.stage ?? ''
+    if (!product.stages.has(stageKey)) {
+      product.stages.set(stageKey, { key: stageKey, label: machine.stage?.toUpperCase() ?? '', machines: [] })
+    }
+    product.stages.get(stageKey).machines.push(machine)
+    product.count++
+  }
+  // 順序沿用 API 回傳（第一次出現的順序），由後端決定，前端不另外排序
+  return [...products.values()].map((product) => ({
+    ...product,
+    stages: [...product.stages.values()],
+  }))
+})
+
+// 收合的 product（預設全部展開）
+const collapsedProducts = ref(new Set())
+
+function toggleProduct(key) {
+  const next = new Set(collapsedProducts.value)
+  next.has(key) ? next.delete(key) : next.add(key)
+  collapsedProducts.value = next
+}
+
+function formatProduct(product) {
+  return product ? product.charAt(0).toUpperCase() + product.slice(1) : '其他'
+}
+
+function getMachineLabel(machine) {
+  if (machine.name) return machine.name
+  if (machine.label) return machine.label
+  return [formatProduct(machine.product), machine.stage?.toUpperCase(), machine.mac].filter(Boolean).join(' / ')
+}
+
+function escapeRegExp(text) {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+// 樹狀選單已經有 product / stage 層級，label 前面重複的 "Vader.QS1 for " 拿掉，只留可辨識的部分
+// 例如 Vader.QS1 for Bespin TSC → Bespin TSC、Neutrino.EB1 E-Board.7F → E-Board.7F；沒有 label 時顯示 mac
+function getShortLabel(machine) {
+  if (!machine.label) return machine.mac
+  const prefix = [machine.product, machine.stage].filter(Boolean).map(escapeRegExp).join('\\.')
+  const short = machine.label
+    .replace(new RegExp(`^${prefix}`, 'i'), '')
+    .replace(/^[\s.]*(for\s+)?/i, '')
+    .trim()
+  return short || machine.mac
+}
+
+function isCurrentMachine(machine) {
+  return currentMachine.value?.machine_type === machine.machine_type
+}
+
 async function selectMachine(machine) {
   currentMachine.value = machine
   currentPage.value = 1
   isLoadingHistory.value = true
   try {
-    const history = await fetchFirmwareHistory(machine)
+    const history = await fetchFirmwareHistory(machine.machine_type)
     // 快速切換機台時，忽略較慢回來的舊請求
     if (currentMachine.value === machine) firmwareHistory.value = history
   } catch (error) {
-    console.error(`無法載入 ${machine.name} 的 firmware 紀錄`, error)
+    console.error(`無法載入 ${getMachineLabel(machine)} 的 firmware 紀錄`, error)
     if (currentMachine.value === machine) firmwareHistory.value = []
   } finally {
     if (currentMachine.value === machine) isLoadingHistory.value = false
   }
 }
 
-// 依路由決定目前機台：單機頁找網址上的 machineType，總表預設第一台
+// 依路由決定目前機台：單機頁找網址上的 machineType，總表預設樹狀選單的第一台
 function syncMachineFromRoute() {
   if (!machines.value.length) return
   if (isSingleMachine.value) {
@@ -65,22 +127,37 @@ function syncMachineFromRoute() {
       firmwareHistory.value = []
     }
   } else if (!currentMachine.value) {
-    selectMachine(machines.value[0])
+    selectMachine(machineTree.value[0].stages[0].machines[0])
   }
 }
 
-watch(() => props.machineType, syncMachineFromRoute)
+async function loadMachines() {
+  isLoadingMachines.value = true
+  currentMachine.value = null
+  try {
+    machines.value = isSingleMachine.value ? await fetchMachines() : await fetchActiveMachineFolders()
+    syncMachineFromRoute()
+  } catch (error) {
+    console.error('無法載入機台清單', error)
+    machines.value = []
+  } finally {
+    isLoadingMachines.value = false
+  }
+}
+
+// 總表與單機頁的機台來源不同，切換時重新載入；同為單機頁只換機台
+watch(isSingleMachine, loadMachines)
+watch(() => props.machineType, () => {
+  if (isSingleMachine.value) syncMachineFromRoute()
+})
 
 onMounted(async () => {
   try {
     metadataMap.value = await fetchMetadata()
-    machines.value = await fetchMachines()
-    syncMachineFromRoute()
   } catch (error) {
-    console.error('無法載入機台清單', error)
-  } finally {
-    isLoadingMachines.value = false
+    console.error('無法載入 bundle metadata', error)
   }
+  await loadMachines()
 })
 
 const totalPages = computed(() => Math.max(1, Math.ceil(historyRows.value.length / pageSize.value)))
@@ -129,101 +206,143 @@ function isVersionMismatch(row, column) {
 </script>
 
 <template>
-  <div class="dashboard-list">
-    <nav v-if="!isSingleMachine" class="machine-bar" aria-label="機台選擇">
-      <button v-for="machine in machines" :key="machine.machine_type"
-        :class="{ 'active': currentMachine && currentMachine.machine_type === machine.machine_type }"
-        :aria-pressed="currentMachine && currentMachine.machine_type === machine.machine_type" @click="selectMachine(machine)">
-        {{ machine.name }}
-      </button>
-    </nav>
-
-    <header class="list-header">
-      <h1>
-        Firmware Modules
-        <span v-if="isSingleMachine && currentMachine" class="machine-name">{{ currentMachine.name }}</span>
-      </h1>
-      <div class="bundle-filter" aria-label="Bundle 篩選">
-        <button :class="{ 'active': currentBundle === 'none' }" :aria-pressed="currentBundle === 'none'"
-          @click="currentBundle = 'none'">
-          全部
-        </button>
-        <div v-for="(bundle, index) in metadataMap" :key="bundle.Name" class="bundle-item">
-          <button :class="{ 'active': currentBundle === bundle.Name }" :aria-pressed="currentBundle === bundle.Name"
-            :aria-describedby="`bundle-card-${index}`" @click="currentBundle = bundle.Name">
-            {{ bundle.Name }}
-            <span class="bundle-info">
-              <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">
-                <circle cx="8" cy="8" r="7" fill="none" stroke="currentColor" stroke-width="1.5" />
-                <circle cx="8" cy="4.75" r="1" fill="currentColor" />
-                <path d="M8 7v4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
-              </svg>
-            </span>
+  <div class="dashboard-list" :class="{ 'with-tree': !isSingleMachine }">
+    <aside v-if="!isSingleMachine" class="machine-tree" aria-label="機台選擇">
+      <h2>機台</h2>
+      <p v-if="isLoadingMachines" class="tree-hint">載入中…</p>
+      <ul v-else>
+        <li v-for="product in machineTree" :key="product.key">
+          <button class="tree-product" :aria-expanded="!collapsedProducts.has(product.key)"
+            @click="toggleProduct(product.key)">
+            <span class="tree-caret" :class="{ collapsed: collapsedProducts.has(product.key) }" aria-hidden="true">▾</span>
+            {{ product.label }}
+            <span class="tree-count">{{ product.count }}</span>
           </button>
-          <!-- 卡片放在 button 外面：button 裡不能放 div，且點卡片內容不該觸發切換 bundle -->
-          <div :id="`bundle-card-${index}`" class="bundle-card" role="tooltip">
-            <h2>{{ bundle.Name }}</h2>
-            <dl>
-              <template v-for="field in getBundleFields(bundle)" :key="field.key">
-                <dt>{{ field.key }}</dt>
-                <dd :class="{ 'is-null': field.value === null }">{{ field.value ?? '—' }}</dd>
+          <ul v-show="!collapsedProducts.has(product.key)">
+            <li v-for="stage in product.stages" :key="stage.key">
+              <div v-if="stage.label" class="tree-stage">{{ stage.label }}</div>
+              <ul>
+                <li v-for="machine in stage.machines" :key="machine.machine_type">
+                  <button class="tree-machine" :class="{ active: isCurrentMachine(machine) }"
+                    :aria-pressed="isCurrentMachine(machine)" :title="`${getMachineLabel(machine)}\n${machine.machine_type}`"
+                    @click="selectMachine(machine)">
+                    <span class="tree-machine-text">
+                      <span class="tree-machine-label">{{ getShortLabel(machine) }}</span>
+                      <span v-if="machine.label" class="tree-machine-mac">{{ machine.mac }}</span>
+                    </span>
+                    <span v-if="machine.role" class="role-badge">{{ machine.role }}</span>
+                  </button>
+                </li>
+              </ul>
+            </li>
+          </ul>
+        </li>
+      </ul>
+    </aside>
+
+    <section class="dashboard-main">
+      <header class="list-header">
+        <div class="title-block">
+          <h1>Firmware Modules</h1>
+          <p v-if="currentMachine" class="machine-path">
+            <template v-if="currentMachine.name">{{ currentMachine.name }}</template>
+            <template v-else>
+              <span class="path-product">{{ formatProduct(currentMachine.product) }}</span>
+              <template v-if="currentMachine.stage">
+                <span class="path-sep" aria-hidden="true">›</span>
+                <span>{{ currentMachine.stage.toUpperCase() }}</span>
               </template>
-            </dl>
+              <span class="path-sep" aria-hidden="true">›</span>
+              <span v-if="currentMachine.label" class="path-label">{{ getShortLabel(currentMachine) }}</span>
+              <span v-if="currentMachine.role" class="role-badge">{{ currentMachine.role }}</span>
+              <code class="path-mac">{{ currentMachine.mac }}</code>
+              <span v-if="currentMachine.network" class="path-network">{{ currentMachine.network }}</span>
+            </template>
+          </p>
+        </div>
+        <div class="bundle-filter" aria-label="Bundle 篩選">
+          <span class="filter-label">比對 Bundle</span>
+          <button :class="{ 'active': currentBundle === 'none' }" :aria-pressed="currentBundle === 'none'"
+            @click="currentBundle = 'none'">
+            全部
+          </button>
+          <div v-for="(bundle, index) in metadataMap" :key="bundle.Name" class="bundle-item">
+            <button :class="{ 'active': currentBundle === bundle.Name }" :aria-pressed="currentBundle === bundle.Name"
+              :aria-describedby="`bundle-card-${index}`" @click="currentBundle = bundle.Name">
+              {{ bundle.Name }}
+              <span class="bundle-info">
+                <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
+                  <circle cx="8" cy="8" r="7" fill="none" stroke="currentColor" stroke-width="1.5" />
+                  <circle cx="8" cy="4.75" r="1" fill="currentColor" />
+                  <path d="M8 7v4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+                </svg>
+              </span>
+            </button>
+            <!-- 卡片放在 button 外面：button 裡不能放 div，且點卡片內容不該觸發切換 bundle -->
+            <div :id="`bundle-card-${index}`" class="bundle-card" role="tooltip">
+              <h2>{{ bundle.Name }}</h2>
+              <dl>
+                <template v-for="field in getBundleFields(bundle)" :key="field.key">
+                  <dt>{{ field.key }}</dt>
+                  <dd :class="{ 'is-null': field.value === null }">{{ field.value ?? '—' }}</dd>
+                </template>
+              </dl>
+            </div>
           </div>
         </div>
-      </div>
-    </header>
+      </header>
 
-    <ul class="legend">
-      <li><span class="legend-swatch version-diff"></span>版本與所選 bundle 不符</li>
-    </ul>
+      <ul class="legend">
+        <li><span class="legend-swatch version-diff"></span>版本與所選 bundle 不符</li>
+      </ul>
 
-    <p v-if="isLoadingMachines" class="state-message">載入機台中…</p>
-    <template v-else-if="!machines.length">
-      <p class="state-message">查無機台資料</p>
-    </template>
-    <p v-else-if="isSingleMachine && !currentMachine" class="state-message">
-      查無機台 {{ machineType }}，<RouterLink to="/">回總表</RouterLink>
-    </p>
-    <template v-else>
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th v-for="column in titleColumns" :key="column.key" :title="column.key"
-                :class="{ 'timestamp-column': column.key === 'timestamp' }">
-                {{ getColumnLabel(column) }}
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-if="isLoadingHistory">
-              <td :colspan="titleColumns.length" class="state-message">載入 firmware 紀錄中…</td>
-            </tr>
-            <tr v-else-if="!visibleRows.length">
-              <td :colspan="titleColumns.length" class="state-message">查無 firmware 紀錄</td>
-            </tr>
-            <tr v-for="row in visibleRows" v-else :key="row.id">
-              <td v-for="column in titleColumns" :key="`${row.id}-${column.key}`" :class="[
-                { 'timestamp-column': column.key === 'timestamp' },
-              ]">
-                <span v-if="isVersionMismatch(row, column)" class="diff-badge">{{ getColumnValue(row, column) }}</span>
-                <template v-else>{{ getColumnValue(row, column) }}</template>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-
-      <footer class="pagination-bar">
-        <span>顯示第 {{ firstRow }} - {{ lastRow }} 筆，共 {{ historyRows.length }} 筆</span>
-        <div class="pagination-controls">
-          <button :disabled="currentPage === 1" @click="currentPage--">上一頁</button>
-          <span>第 {{ currentPage }} / {{ totalPages }} 頁</span>
-          <button :disabled="currentPage === totalPages" @click="currentPage++">下一頁</button>
+      <p v-if="isLoadingMachines" class="state-message">載入機台中…</p>
+      <template v-else-if="!machines.length">
+        <p class="state-message">查無機台資料</p>
+      </template>
+      <p v-else-if="isSingleMachine && !currentMachine" class="state-message">
+        查無機台 {{ machineType }}，<RouterLink to="/">回總表</RouterLink>
+      </p>
+      <template v-else>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th v-for="column in titleColumns" :key="column.key" :title="column.key"
+                  :class="{ 'timestamp-column': column.key === 'timestamp' }">
+                  {{ getColumnLabel(column) }}
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-if="isLoadingHistory">
+                <td :colspan="titleColumns.length" class="state-message">載入 firmware 紀錄中…</td>
+              </tr>
+              <tr v-else-if="!visibleRows.length">
+                <td :colspan="titleColumns.length" class="state-message">查無 firmware 紀錄</td>
+              </tr>
+              <tr v-for="row in visibleRows" v-else :key="row.id">
+                <td v-for="column in titleColumns" :key="`${row.id}-${column.key}`" :class="[
+                  { 'timestamp-column': column.key === 'timestamp' },
+                ]">
+                  <span v-if="isVersionMismatch(row, column)" class="diff-badge">{{ getColumnValue(row, column) }}</span>
+                  <template v-else>{{ getColumnValue(row, column) }}</template>
+                </td>
+              </tr>
+            </tbody>
+          </table>
         </div>
-      </footer>
-    </template>
+
+        <footer class="pagination-bar">
+          <span>顯示第 {{ firstRow }} - {{ lastRow }} 筆，共 {{ historyRows.length }} 筆</span>
+          <div class="pagination-controls">
+            <button :disabled="currentPage === 1" @click="currentPage--">上一頁</button>
+            <span>第 {{ currentPage }} / {{ totalPages }} 頁</span>
+            <button :disabled="currentPage === totalPages" @click="currentPage++">下一頁</button>
+          </div>
+        </footer>
+      </template>
+    </section>
   </div>
 </template>
 
@@ -238,13 +357,137 @@ function isVersionMismatch(row, column) {
   box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
 }
 
-.machine-bar {
+.dashboard-list.with-tree {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  gap: 24px;
+  align-items: start;
+}
+
+.dashboard-main {
+  min-width: 0;
+}
+
+.machine-tree {
+  position: sticky;
+  top: 16px;
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+  padding-right: 16px;
+  border-right: 1px solid #e2e8f0;
+}
+
+.machine-tree h2 {
+  margin: 0 0 12px;
+  color: #64748b;
+  font-size: 0.8rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.machine-tree ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.machine-tree > ul > li + li {
+  margin-top: 6px;
+}
+
+.machine-tree li ul {
+  padding-left: 12px;
+}
+
+.tree-hint {
+  margin: 0;
+  color: #94a3b8;
+  font-size: 0.85rem;
+}
+
+.machine-tree button {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 16px;
-  padding-bottom: 16px;
-  border-bottom: 1px solid #e2e8f0;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  border-color: transparent;
+  text-align: left;
+}
+
+.tree-product {
+  padding: 6px 8px;
+  color: #2c3e50;
+}
+
+.tree-caret {
+  display: inline-block;
+  width: 12px;
+  color: #94a3b8;
+  transition: transform 0.15s;
+}
+
+.tree-caret.collapsed {
+  transform: rotate(-90deg);
+}
+
+.tree-count {
+  margin-left: auto;
+  color: #94a3b8;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.tree-stage {
+  margin: 6px 0 2px;
+  padding-left: 8px;
+  color: #94a3b8;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.tree-machine {
+  margin: 1px 0;
+  padding: 5px 8px;
+  font-size: 0.82rem;
+  font-weight: 500;
+}
+
+.tree-machine-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.tree-machine-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tree-machine-mac {
+  color: #94a3b8;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.7rem;
+}
+
+.tree-machine.active .tree-machine-mac {
+  color: #f87171;
+}
+
+.role-badge {
+  flex-shrink: 0;
+  margin-left: auto;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: #e0e7ff;
+  color: #4338ca;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.machine-path .role-badge {
+  margin-left: 0;
 }
 
 .list-header,
@@ -256,27 +499,75 @@ function isVersionMismatch(row, column) {
 }
 
 .list-header {
-  justify-content: space-between;
+  flex-direction: column;
+  align-items: stretch;
   gap: 16px;
-  margin-bottom: 18px;
+  margin-bottom: 16px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #e2e8f0;
 }
 
 h1 {
   margin: 0;
   color: #2c3e50;
-  font-size: clamp(1.15rem, 2vw, 1.55rem);
+  font-size: clamp(1.15rem, 2vw, 1.4rem);
 }
 
-.machine-name {
-  margin-left: 8px;
+.machine-path {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 6px 0 0;
   color: #64748b;
+  font-size: 0.9rem;
   font-weight: 600;
+}
+
+.path-product,
+.path-label {
+  color: #334155;
+}
+
+.path-sep {
+  color: #cbd5e1;
+}
+
+.path-mac {
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: #f1f5f9;
+  color: #334155;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.82rem;
+}
+
+.path-network {
+  padding: 1px 6px;
+  border: 1px solid #e2e8f0;
+  border-radius: 999px;
+  color: #94a3b8;
+  font-size: 0.7rem;
 }
 
 .bundle-filter {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  align-items: center;
+  gap: 6px;
+}
+
+.filter-label {
+  margin-right: 4px;
+  color: #94a3b8;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.bundle-filter button {
+  padding: 5px 12px;
+  border-radius: 999px;
+  font-size: 0.82rem;
 }
 
 .bundle-item {
@@ -311,7 +602,7 @@ button.active .bundle-info:hover {
 .bundle-card {
   position: absolute;
   top: calc(100% + 8px);
-  right: 0;
+  left: 0;
   z-index: 20;
   visibility: hidden;
   opacity: 0;
@@ -516,6 +807,20 @@ tbody tr:hover {
 
 .pagination-controls {
   gap: 10px;
+}
+
+@media (max-width: 900px) {
+  .dashboard-list.with-tree {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .machine-tree {
+    position: static;
+    max-height: 320px;
+    padding: 0 0 16px;
+    border-right: 0;
+    border-bottom: 1px solid #e2e8f0;
+  }
 }
 
 @media (max-width: 640px) {
