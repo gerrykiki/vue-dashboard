@@ -1,12 +1,12 @@
 import { apiManager } from './apiManager'
 
-export async function fetchMachines() {
-  const data = await apiManager.request('/machines')
-  return data.machines
+// 自動掃描到的機器資料夾（已拆好 network / product / stage / mac / label / role）
+export async function fetchMachineFolders() {
+  return apiManager.request('/machines/folders')
 }
 
-// 自動掃描到的機器資料夾（已拆好 network / product / stage / mac），只保留 ACTIVE
+// 總表選單只列 ACTIVE
 export async function fetchActiveMachineFolders() {
-  const folders = await apiManager.request('/machines/folders')
+  const folders = await fetchMachineFolders()
   return folders.filter((folder) => folder.status === 'ACTIVE')
 }

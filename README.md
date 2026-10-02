@@ -9,7 +9,7 @@ This template should help get you started developing with Vue 3 in Vite.
 | 路徑 | 頁面 | 說明 |
 |---|---|---|
 | `/` | 總表 | 左側樹狀選單切換機台（預設第一台），依選擇的 bundle 標示版本不符的欄位 |
-| `/machines/:machineType` | 單機頁 | 只顯示指定機台，不顯示左側選單；bundle 篩選與比對同總表 |
+| `/machines/:mac` | 單機頁 | 只顯示指定機台，不顯示左側選單；bundle 篩選與比對同總表 |
 | 其他路徑 | — | 導回 `/` |
 
 ### 總表的機台選單
@@ -30,19 +30,19 @@ Vader                    ← product（第一層，首字大寫，可點擊收�
 - 專案、stage、機器的順序都沿用 API 回傳的順序（由後端決定），前端不另外排序；總表預設選第一台。
 - 滑鼠移到機器上會顯示完整 label 與 `machine_type`；右側標題列顯示 product › stage › label、role、mac、network。
 
-選單只列出 folders API 裡的機器；手動設定的機台（例如 `BESPIN`）不在其中，請用單機頁路徑開啟。
-
 firmware 歷史紀錄統一由 `GET /api/history/:machine_type` 取得。
 
 ### 單機頁
 
-`:machineType` 對應 `/api/machines` 回傳的 `machine_type`（來源為後端 `machines.json`），大小寫需完全一致，例如：
+`:mac` 對應 `/api/machines/folders` 回傳的 `mac`（不限 ACTIVE，RD_SKIPPED 的機器也能開），比對時忽略大小寫與分隔符號，以下寫法都會開到同一台：
 
-- `/machines/BESPIN`
-- `/machines/VADER_TS2_2675F2CDF659`
-- `/machines/NEUTRINO_EB1_0A576040977F`
+- `/machines/16:23:8e:50:4f:4d`
+- `/machines/16-23-8E-50-4F-4D`
+- `/machines/16238e504f4d`
 
-找不到對應機台時，頁面會顯示「查無機台」並提供回總表的連結。後端新增機台後不需修改前端，新的路徑即可使用。
+找不到對應機台時，頁面會顯示「查無機台」並提供回總表的連結。後端掃描到新機器後不需修改前端，新的路徑即可使用。
+
+手動設定、不在 folders API 裡的機台（例如 `BESPIN`，沒有 mac）目前無法從前端開啟。
 
 ### 部署注意事項
 

@@ -5,8 +5,8 @@ import DashboardList from '../dashBoardList.vue'
 const routes = [
   // 總表：上方可切換機台
   { path: '/', name: 'overview', component: DashboardList },
-  // 單機頁：鎖定網址上的 machineType，不顯示機台切換列
-  { path: '/machines/:machineType', name: 'machine', component: DashboardList, props: true },
+  // 單機頁：鎖定網址上的 mac address，不顯示機台選單
+  { path: '/machines/:mac', name: 'machine', component: DashboardList, props: true },
   { path: '/:pathMatch(.*)*', redirect: '/' },
 ]
 

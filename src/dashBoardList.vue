@@ -6,15 +6,20 @@ import { RouterLink } from 'vue-router'
 
 dayjs.extend(utc)
 import { fetchFirmwareHistory } from './api/firmwareHistory'
-import { fetchActiveMachineFolders, fetchMachines } from './api/machines'
+import { fetchActiveMachineFolders, fetchMachineFolders } from './api/machines'
 import { fetchMetadata } from './api/metadata'
 import machineInfos from './data/machineInfos.json'
 
-// 由路由 /machines/:machineType 帶入；沒有值時就是總表
+// 由路由 /machines/:mac 帶入；沒有值時就是總表
 const props = defineProps({
-  machineType: { type: String, default: '' },
+  mac: { type: String, default: '' },
 })
-const isSingleMachine = computed(() => Boolean(props.machineType))
+const isSingleMachine = computed(() => Boolean(props.mac))
+
+// 比對 mac 時忽略大小寫與分隔符號，16:23:8e:50:4f:4d、16-23-8E-50-4F-4D、16238e504f4d 都視為同一台
+function normalizeMac(mac) {
+  return (mac ?? '').toLowerCase().replace(/[^0-9a-f]/g, '')
+}
 
 const pageSize = ref(10)
 const currentPage = ref(1)
@@ -38,7 +43,7 @@ const historyRows = computed(() =>
 )
 
 // 總表：folders API 的 ACTIVE 機器，依 product > stage > 機器 組成左側樹狀選單
-// 單機頁：仍用 /api/machines 找網址上的 machineType（含手動設定、不在 folders 裡的機台，例如 BESPIN）
+// 單機頁：同樣用 folders API（不限 ACTIVE），依網址上的 mac 找機台
 const machineTree = computed(() => {
   const products = new Map()
   for (const machine of machines.value) {
@@ -115,11 +120,11 @@ async function selectMachine(machine) {
   }
 }
 
-// 依路由決定目前機台：單機頁找網址上的 machineType，總表預設樹狀選單的第一台
+// 依路由決定目前機台：單機頁找網址上的 mac，總表預設樹狀選單的第一台
 function syncMachineFromRoute() {
   if (!machines.value.length) return
   if (isSingleMachine.value) {
-    const machine = machines.value.find((item) => item.machine_type === props.machineType)
+    const machine = machines.value.find((item) => normalizeMac(item.mac) === normalizeMac(props.mac))
     if (machine) {
       selectMachine(machine)
     } else {
@@ -135,7 +140,7 @@ async function loadMachines() {
   isLoadingMachines.value = true
   currentMachine.value = null
   try {
-    machines.value = isSingleMachine.value ? await fetchMachines() : await fetchActiveMachineFolders()
+    machines.value = isSingleMachine.value ? await fetchMachineFolders() : await fetchActiveMachineFolders()
     syncMachineFromRoute()
   } catch (error) {
     console.error('無法載入機台清單', error)
@@ -147,7 +152,7 @@ async function loadMachines() {
 
 // 總表與單機頁的機台來源不同，切換時重新載入；同為單機頁只換機台
 watch(isSingleMachine, loadMachines)
-watch(() => props.machineType, () => {
+watch(() => props.mac, () => {
   if (isSingleMachine.value) syncMachineFromRoute()
 })
 
@@ -301,7 +306,7 @@ function isVersionMismatch(row, column) {
         <p class="state-message">查無機台資料</p>
       </template>
       <p v-else-if="isSingleMachine && !currentMachine" class="state-message">
-        查無機台 {{ machineType }}，<RouterLink to="/">回總表</RouterLink>
+        查無機台 {{ mac }}，<RouterLink to="/">回總表</RouterLink>
       </p>
       <template v-else>
         <div class="table-wrap">
