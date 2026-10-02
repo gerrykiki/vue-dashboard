@@ -3,12 +3,12 @@ import dayjs from 'dayjs'
 import utc from 'dayjs/plugin/utc'
 import { computed, onMounted, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
-
-dayjs.extend(utc)
 import { fetchFirmwareHistory } from './api/firmwareHistory'
 import { fetchActiveMachineFolders, fetchMachineFolders } from './api/machines'
 import { fetchMetadata } from './api/metadata'
 import machineInfos from './data/machineInfos.json'
+
+dayjs.extend(utc)
 
 // 由路由 /machines/:mac 帶入；沒有值時就是總表
 const props = defineProps({
@@ -219,7 +219,8 @@ function isVersionMismatch(row, column) {
         <li v-for="product in machineTree" :key="product.key">
           <button class="tree-product" :aria-expanded="!collapsedProducts.has(product.key)"
             @click="toggleProduct(product.key)">
-            <span class="tree-caret" :class="{ collapsed: collapsedProducts.has(product.key) }" aria-hidden="true">▾</span>
+            <span class="tree-caret" :class="{ collapsed: collapsedProducts.has(product.key) }"
+              aria-hidden="true">▾</span>
             {{ product.label }}
             <span class="tree-count">{{ product.count }}</span>
           </button>
@@ -229,8 +230,8 @@ function isVersionMismatch(row, column) {
               <ul>
                 <li v-for="machine in stage.machines" :key="machine.machine_type">
                   <button class="tree-machine" :class="{ active: isCurrentMachine(machine) }"
-                    :aria-pressed="isCurrentMachine(machine)" :title="`${getMachineLabel(machine)}\n${machine.machine_type}`"
-                    @click="selectMachine(machine)">
+                    :aria-pressed="isCurrentMachine(machine)"
+                    :title="`${getMachineLabel(machine)}\n${machine.machine_type}`" @click="selectMachine(machine)">
                     <span class="tree-machine-text">
                       <span class="tree-machine-label">{{ getShortLabel(machine) }}</span>
                       <span v-if="machine.label" class="tree-machine-mac">{{ machine.mac }}</span>
@@ -248,7 +249,7 @@ function isVersionMismatch(row, column) {
     <section class="dashboard-main">
       <header class="list-header">
         <div class="title-block">
-          <h1>Firmware Modules</h1>
+          <h1>Bundle</h1>
           <p v-if="currentMachine" class="machine-path">
             <template v-if="currentMachine.name">{{ currentMachine.name }}</template>
             <template v-else>
@@ -330,7 +331,8 @@ function isVersionMismatch(row, column) {
                 <td v-for="column in titleColumns" :key="`${row.id}-${column.key}`" :class="[
                   { 'timestamp-column': column.key === 'timestamp' },
                 ]">
-                  <span v-if="isVersionMismatch(row, column)" class="diff-badge">{{ getColumnValue(row, column) }}</span>
+                  <span v-if="isVersionMismatch(row, column)" class="diff-badge">{{ getColumnValue(row, column)
+                    }}</span>
                   <template v-else>{{ getColumnValue(row, column) }}</template>
                 </td>
               </tr>
@@ -396,7 +398,7 @@ function isVersionMismatch(row, column) {
   list-style: none;
 }
 
-.machine-tree > ul > li + li {
+.machine-tree>ul>li+li {
   margin-top: 6px;
 }
 
@@ -579,7 +581,7 @@ h1 {
   position: relative;
 }
 
-.bundle-item > button {
+.bundle-item>button {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -637,8 +639,8 @@ button.active .bundle-info:hover {
   height: 8px;
 }
 
-.bundle-item > button:has(.bundle-info:hover) + .bundle-card,
-.bundle-item > button:focus-visible + .bundle-card,
+.bundle-item>button:has(.bundle-info:hover)+.bundle-card,
+.bundle-item>button:focus-visible+.bundle-card,
 .bundle-card:hover {
   visibility: visible;
   opacity: 1;
